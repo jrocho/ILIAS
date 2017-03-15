@@ -144,7 +144,11 @@ class assClozeTestExport extends assQuestionExport
 						$a_xml_writer->xmlStartTag("render_choice", $attrs);
 
 						// add answers
-						foreach ($gap->getItems() as $answeritem)
+						$shuffleState = $gap->getShuffle();
+						$gap->setShuffle(false);
+						$items = $gap->getItems();
+						$gap->setShuffle($shuffleState);
+						foreach ($items as $answeritem)
 						{
 							$attrs = array(
 								"ident" => $answeritem->getOrder()
@@ -186,7 +190,8 @@ class assClozeTestExport extends assQuestionExport
 						$attrs = array(
 							"fibtype" => "String",
 							"prompt" => "Box",
-							"columns" => $gap->getGapSize()
+							"columns" => $gap->getMaxWidth(),
+							"maxchars" => $gap->getGapSize()
 						);
 						$a_xml_writer->xmlStartTag("render_fib", $attrs);
 						$a_xml_writer->xmlEndTag("render_fib");
@@ -222,7 +227,8 @@ class assClozeTestExport extends assQuestionExport
 						$attrs = array(
 							"fibtype" => "Decimal",
 							"prompt" => "Box",
-							"columns" => $gap->getGapSize()
+							"columns" => $gap->getMaxWidth(),
+							"maxchars" => $gap->getGapSize()
 						);
 						if (is_object($answeritem))
 						{
@@ -259,7 +265,11 @@ class assClozeTestExport extends assQuestionExport
 			switch ($gap->getType())
 			{
 				case CLOZE_SELECT:
-					foreach ($gap->getItems() as $answer)
+					$shuffleState = $gap->getShuffle();
+					$gap->setShuffle(false);
+					$items = $gap->getItems();
+					$gap->setShuffle($shuffleState);
+					foreach ($items as $answer)
 					{
 						$attrs = array(
 							"continue" => "Yes"

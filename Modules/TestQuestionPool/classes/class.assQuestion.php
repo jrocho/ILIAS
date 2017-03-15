@@ -19,6 +19,22 @@ include_once "./Modules/Test/classes/inc.AssessmentConstants.php";
  */
 abstract class assQuestion
 {
+	const IMG_MIME_TYPE_JPG = 'image/jpeg'; 
+	const IMG_MIME_TYPE_PNG = 'image/png'; 
+	const IMG_MIME_TYPE_GIF = 'image/gif';
+	
+	protected static $allowedFileExtensionsByMimeType = array(
+		self::IMG_MIME_TYPE_JPG => array('jpg', 'jpeg'),
+		self::IMG_MIME_TYPE_PNG => array('png'),
+		self::IMG_MIME_TYPE_GIF => array('gif')
+	);
+
+	protected static $allowedCharsetsByMimeType = array(
+		self::IMG_MIME_TYPE_JPG => array('binary'),
+		self::IMG_MIME_TYPE_PNG => array('binary'),
+		self::IMG_MIME_TYPE_GIF => array('binary')
+	);
+
 	/**
 	* Question id
 	*
@@ -244,6 +260,10 @@ abstract class assQuestion
 	
 	protected $lastChange;
 	
+	protected static $allowedImageMaterialFileExtensionsByMimeType = array(
+		'image/jpeg' => array('jpg', 'jpeg'), 'image/png' => array('png'), 'image/gif' => array('gif')
+	);
+	
 	/**
 	* assQuestion constructor
 	*
@@ -297,6 +317,43 @@ abstract class assQuestion
 		$this->questionActionCmd = 'handleQuestionAction';
 		
 		$this->lastChange = null;
+	}
+
+	public static function isAllowedImageMimeType($mimeType)
+	{
+		return (bool)count(self::getAllowedFileExtensionsForMimeType($mimeType));
+	}
+
+	public static function fetchMimeTypeIdentifier($contentTypeString)
+	{
+		return current(explode(';', $contentTypeString));
+	}
+
+	public static function getAllowedFileExtensionsForMimeType($mimeType)
+	{
+		foreach(self::$allowedFileExtensionsByMimeType as $allowedMimeType => $extensions)
+		{
+			$rexCharsets = implode('|', self::$allowedCharsetsByMimeType[$allowedMimeType]);
+			$rexMimeType = preg_quote($allowedMimeType, '/');
+
+			$rex = '/^'.$rexMimeType.'(;(\s)*charset=('.$rexCharsets.'))*$/';
+
+			if( !preg_match($rex, $mimeType) )
+			{
+				continue;
+			}
+
+			return $extensions;
+		}
+
+		return array();
+	}
+
+	public static function isAllowedImageFileExtension($mimeType, $fileExtension)
+	{
+		return in_array(
+			strtolower($fileExtension), self::getAllowedFileExtensionsForMimeType($mimeType)
+		);
 	}
 
 	/**
@@ -820,7 +877,10 @@ abstract class assQuestion
 					array_push($output, '<a href="' . $this->getSuggestedSolutionPathWeb() . $solution["value"]["name"] . '">' . $possible_texts[0] . '</a>');
 					break;
 				case "text":
-					array_push($output, $this->prepareTextareaOutput($solution["value"], true));
+					$solutionValue = $solution["value"];
+					$solutionValue = $this->fixSvgToPng($solutionValue);
+					$solutionValue = $this->fixUnavailableSkinImageSources($solutionValue);
+					$output[] = $this->prepareTextareaOutput($solutionValue, true);
 					break;
 			}
 		}
@@ -2173,6 +2233,65 @@ abstract class assQuestion
 	{
 		return $this->original_id;
 	}
+	
+	protected static $imageSourceFixReplaceMap = array(
+		'ok.svg' => 'ok.png', 'not_ok.svg' => 'not_ok.png',
+		'checkbox_checked.svg' => 'checkbox_checked.png',
+		'checkbox_unchecked.svg' => 'checkbox_unchecked.png',
+		'radiobutton_checked.svg' => 'radiobutton_checked.png',
+		'radiobutton_unchecked.svg' => 'radiobutton_unchecked.png'
+	);
+	
+	public function fixSvgToPng($imageFilenameContainingString)
+	{
+		$needles = array_keys(self::$imageSourceFixReplaceMap);
+		$replacements = array_values(self::$imageSourceFixReplaceMap);
+		return str_replace($needles, $replacements, $imageFilenameContainingString);
+	}
+	
+	
+	public function fixUnavailableSkinImageSources($html)
+	{
+		$matches = null;
+		if( preg_match_all('/src="(.*?)"/m', $html, $matches) )
+		{
+			$sources = $matches[1];
+			
+			$needleReplacementMap = array();
+			
+			foreach($sources as $src)
+			{
+				$file = ilUtil::removeTrailingPathSeparators( ILIAS_ABSOLUTE_PATH ) . DIRECTORY_SEPARATOR . $src;
+				
+				if( file_exists($file) )
+				{
+					continue;
+				}
+				
+				$levels = explode(DIRECTORY_SEPARATOR, $src);
+				if( count($levels) < 5 || $levels[0] != 'Customizing' || $levels[2] != 'skin' )
+				{
+					continue;
+				}
+				
+				$component = '';
+				
+				if( $levels[4] == 'Modules' || $levels[4] == 'Services' )
+				{
+					$component = $levels[4] . DIRECTORY_SEPARATOR . $levels[5];
+				}
+				
+				$needleReplacementMap[$src] = ilUtil::getImagePath(basename($src), $component);
+			}
+			
+			if( count($needleReplacementMap) )
+			{
+				$html = str_replace(array_keys($needleReplacementMap), array_values($needleReplacementMap), $html);
+			}
+		}
+		
+		return $html;
+	}
 
 /**
 * Loads the question from the database
@@ -2666,7 +2785,7 @@ abstract class assQuestion
 		);
 		if ($affectedRows == 1)
 		{
-			$this->suggested_solutions["subquestion_index"] = array(
+			$this->suggested_solutions[$subquestion_index] = array(
 				"type" => $type,
 				"value" => $value,
 				"internal_link" => $solution_id,
@@ -3538,6 +3657,15 @@ abstract class assQuestion
 		{
 			$collected .= $solution_array["value"];
 		}
+
+		require_once 'Modules/TestQuestionPool/classes/class.ilAssQuestionHintList.php';
+		$questionHintList = ilAssQuestionHintList::getListByQuestionId($this->getId());
+		foreach($questionHintList as $questionHint)
+		{
+			/* @var $questionHint ilAssQuestionHint */
+			$collected .= $questionHint->getText();
+		}
+
 		return $collected;
 	}
 

@@ -242,3 +242,58 @@ if(!is_file($salt_location) || !is_readable($salt_location))
 	die("Could not determine the client salt for bcrypt password hashing.");
 }
 ?>
+<#19>
+<?php
+
+	if( !$ilDB->tableColumnExists('qpl_a_mterm', 'ident') )
+	{
+		$ilDB->addTableColumn('qpl_a_mterm', 'ident', array(
+			'type'    => 'integer', 'length'  => 4,
+			'notnull' => false, 'default' => null
+		));
+		
+		$ilDB->manipulate("UPDATE qpl_a_mterm SET ident = term_id WHERE ident IS NULL");
+	}
+	
+	if( !$ilDB->tableColumnExists('qpl_a_mdef', 'ident') )
+	{
+		require_once 'Services/Database/classes/class.ilDBAnalyzer.php';
+		$ilDB->renameTableColumn('qpl_a_mdef', 'morder', 'ident');
+	}
+	
+?>
+<#20>
+<?php
+$ilDB->modifyTableColumn(
+	'wiki_stat_page',
+	'num_ratings',
+	array(
+		'type' => 'integer',
+		'length' => 4,
+		'notnull' => true,
+		'default' => 0
+	)
+);
+?>
+<#21>
+<?php
+//
+?>
+<#22>
+<?php
+$ilDB->modifyTableColumn(
+	'wiki_stat_page',
+	'avg_rating',
+	array(
+		'type' => 'integer',
+		'length' => 4,
+		'notnull' => true,
+		'default' => 0
+	)
+);
+?>
+<#23>
+<?php
+	$mset = new ilSetting("mobs");
+	$mset->set("black_list_file_types", "html");
+?>
